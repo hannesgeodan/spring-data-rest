@@ -23,6 +23,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
@@ -208,7 +209,32 @@ class RepositoryEntityController extends AbstractRepositoryRestController implem
 
 		Resources<?> result = toResources(results, assembler, metadata.getDomainType(), baseLink);
 		result.add(getCollectionResourceLinks(resourceInformation, pageable));
-		return result;
+		return addAffordances(metadata.getDomainType(), result);
+	}
+
+	private Resources<?> addAffordances(Class<?> domainType, Resources<?> resources) {
+
+		if (resources instanceof PagedResources) {
+			return new PagedResources<>(resources.getContent(), ((PagedResources<?>) resources).getMetadata(), addAffordancesToLinks(domainType, resources.getLinks()));
+		}
+
+		return new Resources<>(resources.getContent(), addAffordancesToLinks(domainType, resources.getLinks()));
+	}
+
+	private List<Link> addAffordancesToLinks(Class<?> domainType, List<Link> links) {
+
+		return links.stream()
+			.map(link -> {
+				if (link.hasRel(Link.REL_SELF)) {
+					SpringDataRestAffordance postItemAffordance = new SpringDataRestAffordance(HttpMethod.POST, "post" + domainType.getSimpleName());
+					postItemAffordance.addAffordanceModel(new SpringDataRestHalFormsAffordanceModel(postItemAffordance, domainType, link));
+					postItemAffordance.addAffordanceModel(new SpringDataRestCollectionJsonAffordanceModel(postItemAffordance, domainType, link));
+					return link.andAffordance(postItemAffordance);
+				} else {
+					return link;
+				}
+			})
+			.collect(Collectors.toList());
 	}
 
 	private List<Link> getCollectionResourceLinks(RootResourceInformation resourceInformation,

@@ -15,8 +15,13 @@
  */
 package org.springframework.data.rest.webmvc;
 
+import static org.springframework.hateoas.core.DummyInvocationUtils.*;
+
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import lombok.Value;
+
+import java.lang.reflect.Method;
 
 import org.springframework.data.mapping.PersistentEntity;
 import org.springframework.data.mapping.context.PersistentEntities;
@@ -28,7 +33,10 @@ import org.springframework.hateoas.Link;
 import org.springframework.hateoas.ResourceAssembler;
 import org.springframework.hateoas.core.EmbeddedWrapper;
 import org.springframework.hateoas.core.EmbeddedWrappers;
+import org.springframework.http.HttpMethod;
 import org.springframework.util.Assert;
+import org.springframework.web.util.UriComponents;
+import org.springframework.web.util.UriComponentsBuilder;
 
 /**
  * {@link ResourceAssembler} to create {@link PersistentEntityResource}s for arbitrary domain objects.
@@ -71,10 +79,22 @@ public class PersistentEntityResourceAssembler implements ResourceAssembler<Obje
 
 		PersistentEntity<?, ?> entity = entities.getRequiredPersistentEntity(source.getClass());
 
+		Link selfLink = getSelfLinkFor(source);
+
+		SpringDataRestAffordance putItemAffordance = new SpringDataRestAffordance(HttpMethod.PUT, "put" + source.getClass().getSimpleName());
+		putItemAffordance.addAffordanceModel(new SpringDataRestHalFormsAffordanceModel(putItemAffordance, instance, selfLink));
+		putItemAffordance.addAffordanceModel(new SpringDataRestCollectionJsonAffordanceModel(putItemAffordance, instance, selfLink));
+
+		SpringDataRestAffordance patchItemAffordance = new SpringDataRestAffordance(HttpMethod.PATCH, "patch" + source.getClass().getSimpleName());
+		patchItemAffordance.addAffordanceModel(new SpringDataRestHalFormsAffordanceModel(patchItemAffordance, instance, selfLink));
+		patchItemAffordance.addAffordanceModel(new SpringDataRestCollectionJsonAffordanceModel(patchItemAffordance, instance, selfLink));
+
 		return PersistentEntityResource.build(instance, entity).//
-				withEmbedded(getEmbeddedResources(source)).//
-				withLink(getSelfLinkFor(source)).//
-				withLink(linkProvider.createSelfLinkFor(source));
+					withEmbedded(getEmbeddedResources(source)).//
+					withLink(selfLink
+						.andAffordance(putItemAffordance)
+						.andAffordance(patchItemAffordance)).//
+					withLink(linkProvider.createSelfLinkFor(source));
 	}
 
 	/**

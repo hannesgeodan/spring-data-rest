@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.TimeZone;
 
+import org.assertj.core.api.iterable.Extractor;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -47,14 +48,17 @@ import org.springframework.data.rest.webmvc.json.PersistentEntityJackson2Module;
 import org.springframework.data.web.HateoasPageableHandlerMethodArgumentResolver;
 import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
 import org.springframework.format.datetime.DateFormatter;
+import org.springframework.hateoas.Link;
 import org.springframework.hateoas.LinkDiscoverers;
 import org.springframework.hateoas.MediaTypes;
 import org.springframework.hateoas.core.DefaultRelProvider;
 import org.springframework.hateoas.mvc.TypeConstrainedMappingJackson2HttpMessageConverter;
+import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -64,6 +68,7 @@ import com.jayway.jsonpath.JsonPath;
  * Integration tests for basic application bootstrapping (general configuration related checks).
  *
  * @author Oliver Gierke
+ * @author Greg Turnquist
  */
 public class RepositoryRestMvConfigurationIntegrationTests {
 
@@ -97,6 +102,16 @@ public class RepositoryRestMvConfigurationIntegrationTests {
 		context.getBean("halJacksonHttpMessageConverter", HttpMessageConverter.class);
 		ObjectMapper mapper = context.getBean("halObjectMapper", ObjectMapper.class);
 		mapper.writeValueAsString(new RepositoryLinksResource());
+
+		// Verify HAL-FORMS setup
+		ObjectMapper mapper2 = context.getBean("halFormsObjectMapper", ObjectMapper.class);
+		mapper2.writeValueAsString(new RepositoryLinksResource());
+
+		// Verify Collection+JSON setup
+		ObjectMapper mapper3 = context.getBean("collectionJsonObjectMapper", ObjectMapper.class);
+		RepositoryLinksResource resource = new RepositoryLinksResource();
+		resource.add(new Link("/"));
+		mapper3.writeValueAsString(resource);
 	}
 
 	@Test // DATAREST-271
@@ -159,6 +174,8 @@ public class RepositoryRestMvConfigurationIntegrationTests {
 
 		assertThat(converters.get(0).getSupportedMediaTypes()).contains(MediaTypes.HAL_JSON);
 		assertThat(converters.get(1).getSupportedMediaTypes()).contains(RestMediaTypes.SCHEMA_JSON);
+		assertThat(converters.get(2).getSupportedMediaTypes()).contains(MediaTypes.HAL_FORMS_JSON);
+		assertThat(converters.get(3).getSupportedMediaTypes()).contains(MediaTypes.COLLECTION_JSON);
 	}
 
 	@Test // DATAREST-424
@@ -172,6 +189,8 @@ public class RepositoryRestMvConfigurationIntegrationTests {
 
 		assertThat(converters.get(0).getSupportedMediaTypes()).contains(RestMediaTypes.SCHEMA_JSON);
 		assertThat(converters.get(1).getSupportedMediaTypes()).contains(MediaTypes.HAL_JSON);
+		assertThat(converters.get(2).getSupportedMediaTypes()).contains(MediaTypes.HAL_FORMS_JSON);
+		assertThat(converters.get(3).getSupportedMediaTypes()).contains(MediaTypes.COLLECTION_JSON);
 	}
 
 	@Test // DATAREST-431, DATACMNS-626
@@ -193,6 +212,20 @@ public class RepositoryRestMvConfigurationIntegrationTests {
 		Object messageSource = ReflectionTestUtils.getField(accessor, "messageSource");
 
 		assertThat((String) ReflectionTestUtils.getField(messageSource, "defaultEncoding")).isEqualTo("UTF-8");
+	}
+
+	@Test
+	public void restTemplateRegisteredForAllTypes() {
+
+		RestTemplate restTemplate = context.getBean("restTemplate", RestTemplate.class);
+
+		assertThat(restTemplate).isNotNull();
+		assertThat(restTemplate.getMessageConverters())
+			.flatExtracting((Extractor<HttpMessageConverter, List<MediaType>>) converter -> converter.getSupportedMediaTypes())
+			.contains(
+				MediaTypes.HAL_JSON,
+				MediaTypes.COLLECTION_JSON,
+				MediaTypes.HAL_FORMS_JSON);
 	}
 
 	@Configuration
@@ -217,6 +250,11 @@ public class RepositoryRestMvConfigurationIntegrationTests {
 			config.setPageParamName("myPage");
 			config.setLimitParamName("mySize");
 			config.setSortParamName("mySort");
+		}
+
+		@Bean
+		public RestTemplate restTemplate() {
+			return new RestTemplate();
 		}
 	}
 
